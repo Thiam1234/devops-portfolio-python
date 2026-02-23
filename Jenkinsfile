@@ -10,6 +10,7 @@ pipeline {
     stages {
         stage('📥 1. RÉCUPÉRATION CODE') {
             steps {
+                echo 'Récupération du code depuis GitHub...'
                 checkout scm
             }
         }
@@ -20,6 +21,7 @@ pipeline {
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:latest
+                    docker images | grep ${IMAGE_NAME}
                 '''
             }
         }
@@ -40,11 +42,11 @@ pipeline {
                     sed -i "s|image:.*|image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|" k8s-deployment.yaml
                     
                     # Appliquer le déploiement
-                    microk8s kubectl apply -f k8s-deployment.yaml
+                    kubectl apply -f k8s-deployment.yaml
                     
                     # Attendre que les pods soient prêts
                     sleep 5
-                    microk8s kubectl get pods
+                    kubectl get pods
                 '''
             }
         }
@@ -52,15 +54,25 @@ pipeline {
         stage('✅ 5. VÉRIFICATION') {
             steps {
                 sh '''
+                    echo ""
                     echo "📦 Pods :"
-                    microk8s kubectl get pods
+                    kubectl get pods
                     echo ""
                     echo "🌍 Service :"
-                    microk8s kubectl get svc python-portfolio-service
+                    kubectl get svc python-portfolio-service
                     echo ""
                     echo "🚀 Application accessible sur : http://192.168.56.1:31000"
                 '''
             }
+        }
+    }
+    
+    post {
+        success {
+            echo '🎉 Déploiement Kubernetes réussi !'
+        }
+        failure {
+            echo '❌ Le pipeline a échoué. Vérifie les logs.'
         }
     }
 }
