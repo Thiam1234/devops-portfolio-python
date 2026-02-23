@@ -4,73 +4,63 @@ pipeline {
     environment {
         IMAGE_NAME = "moustapha-python"
         IMAGE_TAG = "${BUILD_NUMBER}"
+        REGISTRY = "localhost:32000"
     }
     
     stages {
         stage('📥 1. RÉCUPÉRATION CODE') {
             steps {
-                echo 'Récupération du code depuis GitHub...'
                 checkout scm
             }
         }
         
-        stage('📝 2. INFORMATIONS') {
-            steps {
-                sh '''
-                    echo "Build numéro: ${BUILD_NUMBER}"
-                    echo "Révision Git: ${GIT_COMMIT}"
-                    ls -la
-                '''
-            }
-        }
-        
-        stage('🐳 3. CONSTRUCTION IMAGE DOCKER') {
+        stage('🐳 2. CONSTRUCTION IMAGE DOCKER') {
             steps {
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
-                    docker images | grep ${IMAGE_NAME}
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:latest
                 '''
             }
         }
         
-        stage('🚀 4. LANCEMENT CONTENEUR (TEST LOCAL)') {
+        stage('📤 3. POUSSER VERS REGISTRE') {
             steps {
                 sh '''
-                    # Arrêter et supprimer l'ancien conteneur
-                    docker stop python-portfolio 2>/dev/null || true
-                    docker rm python-portfolio 2>/dev/null || true
-                    
-                    # Lancer le nouveau conteneur
-                    docker run -d -p 5000:5000 --name python-portfolio ${IMAGE_NAME}:${IMAGE_TAG}
-                    
-                    # Attendre que l'app démarre
-                    sleep 3
-                    
-                    # Tester que l'app répond
-                    curl -s http://localhost:5000 | grep -q "Moustapha" && echo "✅ Application OK" || echo "⚠️ Vérifie l'app"
-                    
-                    echo "🌍 http://localhost:5000"
+                    docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker push ${REGISTRY}/${IMAGE_NAME}:latest
                 '''
             }
         }
         
-        stage('✅ 5. SUCCÈS') {
+        stage('☸️ 4. DÉPLOIEMENT KUBERNETES') {
             steps {
-                echo '═══════════════════════════════════'
-                echo '🎉 APPLICATION PYTHON PRÊTE !'
-                echo '═══════════════════════════════════'
-                echo ''
-                echo "📦 Image : ${IMAGE_NAME}:${IMAGE_TAG}"
-                echo "🌍 Accès : http://localhost:5000"
-                echo "📂 Code : https://github.com/Thiam1234/devops-portfolio-python"
+                sh '''
+                    # Mettre à jour l'image dans le fichier de déploiement
+                    sed -i "s|image:.*|image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|" k8s-deployment.yaml
+                    
+                    # Appliquer le déploiement
+                    microk8s kubectl apply -f k8s-deployment.yaml
+                    
+                    # Attendre que les pods soient prêts
+                    sleep 5
+                    microk8s kubectl get pods
+                '''
             }
         }
-    }
-    
-    post {
-        failure {
-            echo '❌ Le pipeline a échoué. Vérifie les logs.'
+        
+        stage('✅ 5. VÉRIFICATION') {
+            steps {
+                sh '''
+                    echo "📦 Pods :"
+                    microk8s kubectl get pods
+                    echo ""
+                    echo "🌍 Service :"
+                    microk8s kubectl get svc python-portfolio-service
+                    echo ""
+                    echo "🚀 Application accessible sur : http://192.168.56.1:31000"
+                '''
+            }
         }
     }
 }
