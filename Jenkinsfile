@@ -4,7 +4,6 @@ pipeline {
     environment {
         IMAGE_NAME = "moustapha-python"
         IMAGE_TAG = "${BUILD_NUMBER}"
-        REGISTRY = "localhost:32000"
     }
     
     stages {
@@ -19,58 +18,46 @@ pipeline {
             steps {
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${IMAGE_NAME}:latest
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
                     docker images | grep ${IMAGE_NAME}
                 '''
             }
         }
         
-        stage('📤 3. POUSSER VERS REGISTRE') {
+        stage('🚀 3. LANCEMENT DU CONTENEUR') {
             steps {
                 sh '''
-                    docker push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                    docker push ${REGISTRY}/${IMAGE_NAME}:latest
+                    # Arrêter et supprimer l'ancien conteneur
+                    docker stop python-portfolio 2>/dev/null || true
+                    docker rm python-portfolio 2>/dev/null || true
+                    
+                    # Lancer le nouveau conteneur
+                    docker run -d -p 5000:5000 --name python-portfolio ${IMAGE_NAME}:${IMAGE_TAG}
+                    
+                    # Attendre que l'app démarre
+                    sleep 3
+                    
+                    # Tester que l'app répond
+                    echo "✅ Application lancée sur http://localhost:5000"
+                    curl -s http://localhost:5000 | grep -o "Moustapha" || echo "⚠️ Vérifie l'app"
                 '''
             }
         }
         
-        stage('☸️ 4. DÉPLOIEMENT KUBERNETES') {
+        stage('✅ 4. SUCCÈS') {
             steps {
-                sh '''
-                    # Mettre à jour l'image dans le fichier de déploiement
-                    sed -i "s|image:.*|image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|" k8s-deployment.yaml
-                    
-                    # Appliquer le déploiement
-                    kubectl apply -f k8s-deployment.yaml
-                    
-                    # Attendre que les pods soient prêts
-                    sleep 5
-                    kubectl get pods
-                '''
-            }
-        }
-        
-        stage('✅ 5. VÉRIFICATION') {
-            steps {
-                sh '''
-                    echo ""
-                    echo "📦 Pods :"
-                    kubectl get pods
-                    echo ""
-                    echo "🌍 Service :"
-                    kubectl get svc python-portfolio-service
-                    echo ""
-                    echo "🚀 Application accessible sur : http://192.168.56.1:31000"
-                '''
+                echo '═══════════════════════════════════'
+                echo '🎉 APPLICATION PYTHON DÉPLOYÉE !'
+                echo '═══════════════════════════════════'
+                echo ''
+                echo "🌍 Accès : http://localhost:5000"
+                echo "📦 Image : ${IMAGE_NAME}:${IMAGE_TAG}"
+                echo "📂 Code : https://github.com/Thiam1234/devops-portfolio-python"
             }
         }
     }
     
     post {
-        success {
-            echo '🎉 Déploiement Kubernetes réussi !'
-        }
         failure {
             echo '❌ Le pipeline a échoué. Vérifie les logs.'
         }
